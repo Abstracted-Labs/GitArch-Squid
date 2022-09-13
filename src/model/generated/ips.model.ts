@@ -2,20 +2,23 @@ import {Entity as Entity_, Column as Column_, PrimaryColumn as PrimaryColumn_, O
 import {IpsAccount} from "./ipsAccount.model"
 
 @Entity_()
-export class Account {
-  constructor(props?: Partial<Account>) {
+export class Ips {
+  constructor(props?: Partial<Ips>) {
     Object.assign(this, props)
   }
 
   /**
-   * Account address
+   * IP set ID
    */
   @PrimaryColumn_()
   id!: string
 
   /**
-   * IP sets this account has some level of access to via ownership or sub tokens
+   * Account ID of the IP set
    */
-  @OneToMany_(() => IpsAccount, e => e.account)
-  ipSets!: IpsAccount[]
+  @Column_("text", {nullable: false})
+  accountId!: string
+
+  @OneToMany_(() => IpsAccount, e => e.ips)
+  accounts!: IpsAccount[]
 }

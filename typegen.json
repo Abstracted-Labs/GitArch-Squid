@@ -1,8 +1,9 @@
 {
   "outDir": "src/types",
-  "specVersions": "https://kusama.archive.subsquid.io/graphql",
+  "specVersions": "https://invarch-tinkernet.archive.subsquid.io/graphql",
   "events": [
-    "Balances.Transfer"
+    "INV4.IPSCreated",
+    "INV4.Minted"
   ],
   "calls": [ 
   ],

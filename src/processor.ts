@@ -14,8 +14,9 @@ import {
   IpsAccount
 } from "./model/generated";
 import {
-  Inv4IpsCreatedEvent, Inv4MintedEvent
+  Inv4IpsCreatedEvent
 } from "./types/events";
+
 
 const processor = new SubstrateBatchProcessor()
   .setBatchSize(500)
@@ -49,7 +50,8 @@ processor.run(new TypeormDatabase(), async (ctx) => {
   // }
 
   for (const ipsAccount of events.ipsAccounts)  {
-    const account = getAccount(accounts, ipsAccount[1]);
+    let id = `${ipsAccount}-${Math.floor(Math.random() * 1_000_000_000_000)}`
+    const account = getAccount(accounts, id, ipsAccount[1]);
     // necessary to add this field to the previously created model
     // because now we have the Account created.
     ipsAccount[0].account = account;
@@ -90,21 +92,34 @@ function getEvents(ctx: Ctx): EventInfo {
       if (item.name === "INV4.IPSCreated") {
         const e = new Inv4IpsCreatedEvent(ctx, item.event);
         // const accountId = ss58.codec("invarch-tinkernet").encode(e.asV2[0]);
-        const accountId = item.event.call?.origin;
+        // const accountId = JSON.stringify(item.event.extrinsic?.signature?.address);
+        const accountId = item.event.call?.origin?.value.value;
         const { ipsAccount, ipsId, assets } = e.asV2;
+        // const alteredIpsAccount = ipsAccount.toString().substring(2);
+        const encodedIpsAccount = ss58.codec(117).encode(ipsAccount);
+
+        console.log(`accountId: ${accountId}`);
+
+        ctx.log.debug(`accountId: ${accountId}`);
+        ctx.log.debug(`ipsId: ${ipsId.toString()}`);
+        ctx.log.debug(`ipsAccount as u8array: ${ipsAccount}`);
+        ctx.log.debug(`ipsAccount as string: ${ipsAccount.toString()}`);
+        ctx.log.debug(`encodedIpsAccount: ${encodedIpsAccount}`);
 
         // Create Ips object
         const ipsObj = new Ips({
           id: ipsId.toString(),
-          accountId: ipsAccount.toString()
+          accountId: encodedIpsAccount
         });
 
         events.ips.push([ipsObj, accountId]);
 
+        let placeholder_acc = new Account({ id: encodedIpsAccount});
+
         // Create IpsAccount object
         const ipsAccountObj = new IpsAccount({
-          id: ipsId.toString() + "-" + ipsAccount.toString(),
-          account: new Account(), // Setting it here to something. Is updated in processor.run() with correect value
+          id: ipsId.toString() + "-" + encodedIpsAccount,
+          account: placeholder_acc, // Setting it here to something. Is updated in processor.run() with correect value
           ips: ipsObj
         });
 
@@ -147,11 +162,12 @@ function getEvents(ctx: Ctx): EventInfo {
   return events;
 }
 
-function getAccount(m: Map<string, Account>, id: string): Account {
+function getAccount(m: Map<string, Account>, id: string, accountId: string): Account {
   let acc = m.get(id);
   if (acc == null) {
     acc = new Account();
     acc.id = id;
+    acc.accountId = accountId;
     m.set(id, acc);
   }
   return acc;

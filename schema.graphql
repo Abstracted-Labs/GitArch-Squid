@@ -1,12 +1,14 @@
 type IpsAccount @entity {
   id: ID! # This is required, even if useless
-  account: Account! @index
+  account: Account!
   ips: Ips!
 }
 
 type Account @entity {
   "Account address"
   id: ID!
+
+  accountId: String
 
   "IP sets this account has some level of access to via ownership or sub tokens"
   ipSets: [IpsAccount!] @derivedFrom(field: "account")
@@ -17,7 +19,7 @@ type Ips @entity {
   id: ID!
 
   "Account ID of the IP set"
-  accountId: String!
+  accountId: String
 
   accounts: [IpsAccount!]! @derivedFrom(field: "ips")
 }

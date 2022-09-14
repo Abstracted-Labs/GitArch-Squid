@@ -16,8 +16,8 @@ export class Ips {
   /**
    * Account ID of the IP set
    */
-  @Column_("text", {nullable: false})
-  accountId!: string
+  @Column_("text", {nullable: true})
+  accountId!: string | undefined | null
 
   @OneToMany_(() => IpsAccount, e => e.ips)
   accounts!: IpsAccount[]

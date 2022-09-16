@@ -2,7 +2,8 @@
   "outDir": "src/types",
   "specVersions": "https://invarch-tinkernet.archive.subsquid.io/graphql",
   "events": [
-    "INV4.IPSCreated"
+    "INV4.IPSCreated",
+    "INV4.SubTokenCreated"
   ],
   "calls": [ 
   ],

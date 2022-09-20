@@ -2,6 +2,7 @@ type IpsAccount @entity {
   id: ID! # This is required, even if useless
   account: Account!
   ips: Ips!
+  tokenBalance: BigInt
 }
 
 type Account @entity {

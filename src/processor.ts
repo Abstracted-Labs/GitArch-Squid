@@ -18,13 +18,10 @@ import {
   Inv4IpsCreatedEvent, Inv4SubTokenCreatedEvent, Inv4MintedEvent
 } from "./types/events";
 import { bigintTransformer } from "./model/generated/marshal";
+import { handleMinted } from "./handlers";
+import { placeholder_addr, ipsPlaceholderObj} from "./defaults";
+import { EventInfo, getAccount, getIpsAccountObj, getIpsObj} from "./utility";
 
-const placeholder_addr = "0x0000000000000000000000000000000000000000000000000000000000000000";
-
-const ipsPlaceholderObj = new Ips({
-  id: "0",
-  accountId: placeholder_addr
-});
 
 const processor = new SubstrateBatchProcessor()
   .setBatchSize(500)
@@ -85,13 +82,6 @@ function stringifyArray(list: any[]): any[] {
     listStr.push(vec);
   }
   return listStr;
-}
-
-type Tuple<T,K> = [T,K];
-interface EventInfo {
-  ips: Tuple<Ips, string>[];
-  ipsAccounts: Tuple<IpsAccount, string>[];
-  accountIds: Set<string>;
 }
 
 async function getEvents(ctx: Ctx): Promise<EventInfo> {
@@ -209,127 +199,11 @@ async function getEvents(ctx: Ctx): Promise<EventInfo> {
         }
       }
 
-      // else if (item.name === "INV4.Minted") {
-      //   const e = new Inv4SubTokenCreatedEvent(ctx, item.event);
-        
-      //   const subTokens = e.asV2.subTokensWithEndowment;
-      //   for (let token of subTokens) {
-      //     let ipsId = token[0][0];
-      //     // let toAccount = ss58.codec(117).encode(token[1]);
-      //     let toAccount = toHex(token[1]);
-      //     let amount = Number(token[2]);
-
-      //     console.log(`SubTokenCreated ipsId: "${ipsId}"`);
-      //     console.log(`SubTokenCreated toAccount: ${toAccount}`);
-      //     console.log(`SubTokenCreated amount: ${amount}`);
-
-      //     // If 0 tokens are minted to an account then nothing changes
-      //     // Only care if amount is > 0
-      //     if (amount > 0) {
-      //       let placeholder_acc = new Account({ id: placeholder_addr});
-
-      //       let ipsObj = await ctx.store.get(Ips, ipsId.toString());
-
-      //       console.log(`ipsObj: ${ipsObj}`);
-
-      //       // temporary
-      //       const ipsPlaceholderObj = new Ips({
-      //         id: ipsId.toString(),
-      //         accountId: placeholder_addr
-      //       });
-
-      //       // Create IpsAccount object
-      //       const ipsAccountObj = new IpsAccount({
-      //         id: ipsId.toString() + "-" + toAccount,
-      //         account: placeholder_acc, // Setting it here to something. Is updated in processor.run() with correect value
-      //         ips: ipsPlaceholderObj
-      //       });
-
-      //       events.ipsAccounts.push([ipsAccountObj, toAccount]);
-      //       events.accountIds.add(toAccount);
-      //     }
-      //   }
-      // }
-
-      // else if (item.name === "INV4.Minted") {
-      //   const e = new Inv4MintedEvent(ctx, item.event);
-
-      //   const { token, target, amount} = e.asV2;
-      //   const accountId = target.toString();
-      //   const ipsId = token.toString();
-
-      //   // Create IpsAccount object
-      //   const ipsAccountObj = new IpsAccount({
-      //     id: ipsId.toString() + "-" + amount.toString(),
-      //     account: new Account(), // Setting it here to something. Is updated in processor.run() with correect value
-      //     ips: ipsObj
-      //   });
-
-      //   events.ipsAccounts.push([ipsAccountObj, accountId]);
-
-      //   // add encountered account ID to the Set of unique accountIDs
-      //   events.accountIds.add(accountId);
-      // }
+      else if (item.name === "INV4.Minted") {
+        handleMinted(ctx, item, events);
+      }
     }
   }
   return events;
 }
 
-function getAccount(m: Map<string, Account>, id: string, accountId: string): Account {
-  let acc = m.get(id);
-  if (acc == null) {
-    acc = new Account();
-    acc.id = id;
-    acc.accountId = accountId;
-    m.set(id, acc);
-  }
-  return acc;
-}
-
-function randomNum(): Number {
-  return Math.floor(Math.random() * 1_000_000_000_000);
-}
-
-async function getIpsObj(ctx: Ctx, events: Tuple<Ips, string>[], ipsId: Number): Promise<Ips> {
-  const defaultIpsObj = new Ips({
-    id: ipsId.toString(),
-    accountId: placeholder_addr
-  });
-  
-  // First check buffered events
-  let ipsObj = events.find(t => t[0].id === ipsId.toString())?.[0];
-
-  if (!ipsObj) {
-    ipsObj = await ctx.store.get(Ips, ipsId.toString());
-  }
-
-  return ipsObj ?? defaultIpsObj;
-}
-
-/* 
-1. Check if a record already exists for that IPS-accountId pair
-2. If record exists, then 
-    - get IpsAccount object
-    - remove record from DB
-    - update IpsAccount.tokenBalance in object
-    - push object to events
-3. If record does not exist, then
-    - create new IpsAccount object
-    - set IpsAccount.tokenBalance = amount
-    - push object to events
-*/
-async function getIpsAccountObj(ctx: Ctx, events: Tuple<IpsAccount, string>[], ipsAccountId: string): Promise<IpsAccount | undefined> {
-  // First check buffered events
-  let ipsAccountObj = events.find(t => t[0].id === ipsAccountId)?.[0];
-
-  if (!ipsAccountObj) {
-    ipsAccountObj = await ctx.store.get(IpsAccount, ipsAccountId.toString());
-    await ctx.store.remove(IpsAccount, ipsAccountId);
-  }
-  else {
-    // If found in the events array remove obj from the array as it will be re-added in the calling function
-    events.filter(ips => ips[0].id !== ipsAccountId);
-  }
-
-  return ipsAccountObj;
-}

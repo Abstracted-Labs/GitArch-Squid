@@ -1,40 +1,32 @@
-import { lookupArchive } from "@subsquid/archive-registry";
-import * as ss58 from "@subsquid/ss58";
 import {
-  BatchContext,
-  BatchProcessorItem,
-  SubstrateBatchProcessor,
   toHex,
 } from "@subsquid/substrate-processor";
-import { Store, TypeormDatabase } from "@subsquid/typeorm-store";
-import { from } from "form-data";
-import { In } from "typeorm";
 import {
   Account,
-  Ips,
   IpsAccount
 } from "../model/generated";
 import {
-  Inv4IpsCreatedEvent, Inv4SubTokenCreatedEvent, Inv4MintedEvent
+  Inv4MintedEvent
 } from "../types/events";
 import { bigintTransformer } from "../model/generated/marshal";
-import { placeholder_addr, ipsPlaceholderObj} from "../defaults";
+import { placeholder_addr} from "../defaults";
 import { EventInfo, getIpsAccountObj, getIpsObj} from "../utility";
 
 
-export async function handleMinted(ctx: any, item: any, events: any) {
+export async function handleMinted(ctx: any, item: any, events: EventInfo) {
     const e = new Inv4MintedEvent(ctx, item.event);
         
     const {token, target, amount} = e.asV2;
 
     const ipsId = token[0];
+    const subToken = token[1];
     const toAccount = toHex(target);
     const mint_amount = Number(bigintTransformer.to(amount));
 
     // If 0 tokens are minted to an account then nothing changes
     // Only care if amount is > 0
-    if (amount > 0) {
-      console.log(`---Minted---\n\tipsId: ${ipsId}\n\ttoAccount: ${toAccount}\n\tamount: ${mint_amount}\n`);
+    if (mint_amount > 0) {
+      console.log(`---Minted---\n\tipsId: ${ipsId}\n\tsub token: ${subToken}\n\ttoAccount: ${toAccount}\n\tamount created: ${mint_amount}`);
 
       /* 
       1. Check if a record already exists for that IPS-accountId pair
@@ -47,22 +39,38 @@ export async function handleMinted(ctx: any, item: any, events: any) {
           - set IpsAccount.tokenBalance = mint_amout
           - push object to events
       */
-      let ipsAccountLookup = await getIpsAccountObj(ctx, events.ipsAccounts, ipsId.toString() + "-" + toAccount);
+      let lookupId = ipsId.toString() + "-" + toAccount;
+      let lookup = await getIpsAccountObj(ctx, events, lookupId, ipsId);
+      let ipsAccountLookup = lookup[0];
+      let lookupSource = lookup[1];
 
       if (ipsAccountLookup) {
         // Calculate updated `tokenBalance`
         let balance = 0;
         let tokenBalance = ipsAccountLookup.tokenBalance ?? undefined // If null, default to undefined
         let existingBalance = Number(bigintTransformer.to(tokenBalance));
-        console.log(`SubTokenCreated--existingBalance: ${existingBalance}`);
+        console.log(`\texisting balance: ${existingBalance}`);
         balance = existingBalance + mint_amount;
-        console.log(`SubTokenCreated--updatedBalance: ${balance}`);
+        console.log(`\tupdated balance: ${balance}`);
+        console.log(`\tnew record?: NO`);
+        console.log(`\tlookup source: ${lookupSource}`); 
+        console.log(`\tipsObj: ${JSON.stringify(ipsAccountLookup.ips)}\n`); 
 
         // Update tokenBalance
         ipsAccountLookup.tokenBalance = bigintTransformer.from(balance.toString());
+
+        // If ipsAccount obj found in database, insert updated obj into events array
+        if (lookupSource === "DATABASE") {
+          events.ipsAccounts.push([ipsAccountLookup, toAccount]);
+          events.accountIds.add(toAccount);
+          console.log(`DATABASE SOURCE ADDEDED TO ipsAccounts ARRAY, events.ipsAccounts length: ${events.ipsAccounts.length}`);
+          console.log(events.ipsAccounts);
+        }
       }
       // No record was found so create new
       else {
+        console.log(`\tnew record?: YES\n`);
+
         let placeholder_acc = new Account({ id: placeholder_addr});
         let ips = await getIpsObj(ctx, events.ips, ipsId);
 
@@ -73,11 +81,9 @@ export async function handleMinted(ctx: any, item: any, events: any) {
           ips: ips,
           tokenBalance: amount
         });
+
+        events.ipsAccounts.push([ipsAccountLookup, toAccount]);
+        events.accountIds.add(toAccount);
       }
-
-      console.log(`ipsAccountLookup: ${ipsAccountLookup}`);            
-
-      events.ipsAccounts.push([ipsAccountLookup, toAccount]);
-      events.accountIds.add(toAccount);
     }
 }

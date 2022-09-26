@@ -18,7 +18,7 @@ export class IpsAccount {
 
   @Index_()
   @ManyToOne_(() => Ips, {nullable: true})
-  ips!: Ips
+  ips!: Ips | undefined | null
 
   @Column_("numeric", {transformer: marshal.bigintTransformer, nullable: true})
   tokenBalance!: bigint | undefined | null

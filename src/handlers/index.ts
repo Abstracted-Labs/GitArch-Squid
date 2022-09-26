@@ -1,1 +1,2 @@
-export * from "./Minted"
+export * from "./Minted";
+export * from "./Burned";

@@ -15,10 +15,10 @@ import {
   IpsAccount
 } from "./model/generated";
 import {
-  Inv4IpsCreatedEvent, Inv4SubTokenCreatedEvent, Inv4MintedEvent
+  Inv4IpsCreatedEvent, Inv4SubTokenCreatedEvent
 } from "./types/events";
 import { bigintTransformer } from "./model/generated/marshal";
-import { handleMinted } from "./handlers";
+import { handleMinted, handleBurned } from "./handlers";
 import { placeholder_addr, ipsPlaceholderObj} from "./defaults";
 import { EventInfo, getAccount, getIpsAccountObj, getIpsObj} from "./utility";
 
@@ -37,6 +37,9 @@ const processor = new SubstrateBatchProcessor()
   } as const)
   .addEvent("INV4.Minted", {
     data: { event: { args: true , extrinsic: true, call: true} },
+  } as const)
+  .addEvent("INV4.Burned", {
+    data: { event: { args: true , extrinsic: true, call: true} },
   } as const);
 
 type Item = BatchProcessorItem<typeof processor>;
@@ -47,30 +50,44 @@ processor.run(new TypeormDatabase(), async (ctx) => {
   
   // Build map of accountId => Account, only for accountIds that have just been encountered
   let accounts = await ctx.store
-    .findBy(Account, { id: In([...events.accountIds]) })
+    .findBy(Account, { accountId: In([...events.accountIds]) })
     .then((accounts) => {
-      return new Map(accounts.map((a) => [a.id, a]));
+      return new Map(accounts.map((a) => [a.accountId, a]));
     });
 
   let accountsTemp = await ctx.store
-    .findBy(Account, { id: In([...events.accountIds]) })
+    .findBy(Account, { accountId: In([...events.accountIds]) })
 
     for (let account of accountsTemp) {
-      console.log(`accounts: ${account}`);
+      console.log(`accounts: ${JSON.stringify(account)}`);
     }
 
+  console.log(`\n-------PROCESSOR.RUN()--------ipsAccounts length: ${events.ipsAccounts.length}`);
   for (const ipsAccount of events.ipsAccounts)  {
     let id = `${ipsAccount[0].id}`
-    const account = getAccount(accounts, id, ipsAccount[1]);
+    const account = getAccount(accounts, ipsAccount[1]);
     // necessary to add this field to the previously created model
     // because now we have the Account created.
     ipsAccount[0].account = account;
+
+    let ips = JSON.stringify(ipsAccount[0].ips);
+    console.log(ips);
+    
+    let acc = JSON.stringify(ipsAccount[0].account);
+    console.log(acc);
+
+    let tokenBalance = ipsAccount[0].tokenBalance ?? undefined // If null, default to undefined
+    let bal = Number(bigintTransformer.to(tokenBalance));
+    console.log(bal);
+
+    console.log();
   }
 
   // Save 
   await ctx.store.save(Array.from(accounts.values()));
   await ctx.store.insert(events.ips.map(el => el[0]));
-  await ctx.store.insert(events.ipsAccounts.map(el => el[0]));
+  // await ctx.store.insert(events.ipsAccounts.map(el => el[0]));
+  await ctx.store.save(events.ipsAccounts.map(el => el[0]));
 });
 
 function stringifyArray(list: any[]): any[] {
@@ -99,7 +116,7 @@ async function getEvents(ctx: Ctx): Promise<EventInfo> {
         const { ipsAccount, ipsId, assets } = e.asV2;
         const encodedIpsAccount = ss58.codec(117).encode(ipsAccount);
 
-        console.log(`IPSCreated accountId: ${accountId}`);
+        console.log(`---IPSCreated---\n\tipsId: ${ipsId}\n\tcreator account ID: ${accountId}\n\tIPS account ID: ${encodedIpsAccount}\n`);
 
         // Create Ips object
         const ipsObj = new Ips({
@@ -140,13 +157,12 @@ async function getEvents(ctx: Ctx): Promise<EventInfo> {
         const subTokens = e.asV2.subTokensWithEndowment;
         for (let token of subTokens) {
           let ipsId = token[0][0];
+          let subToken = token[0][1];
           // let toAccount = ss58.codec(117).encode(token[1]);
           let toAccount = toHex(token[1]);
           let amount = Number(token[2]);
 
-          console.log(`SubTokenCreated--ipsId: ${ipsId}`);
-          console.log(`SubTokenCreated--toAccount: ${toAccount}`);
-          console.log(`SubTokenCreated--amount: ${amount}`);
+          console.log(`---SubTokenCreated---\n\tipsId: ${ipsId}\n\tsub token: ${subToken}\n\tto account: ${toAccount}\n\tamount created: ${amount}`);
 
           // If 0 tokens are minted to an account then nothing changes
           // Only care if amount is > 0
@@ -164,22 +180,34 @@ async function getEvents(ctx: Ctx): Promise<EventInfo> {
                 - set IpsAccount.tokenBalance = amount
                 - push object to events
             */
-            let ipsAccountLookup = await getIpsAccountObj(ctx, events.ipsAccounts, ipsId.toString() + "-" + toAccount);
+            let lookup = await getIpsAccountObj(ctx, events, ipsId.toString() + "-" + toAccount, ipsId);
+            let ipsAccountLookup = lookup[0];
+            let lookupSource = lookup[1];
 
             if (ipsAccountLookup) {
               // Calculate updated `tokenBalance`
               let balance = 0;
               let tokenBalance = ipsAccountLookup.tokenBalance ?? undefined // If null, default to undefined
               let existingBalance = Number(bigintTransformer.to(tokenBalance));
-              console.log(`SubTokenCreated--existingBalance: ${existingBalance}`);
+              console.log(`\texisting balance: ${existingBalance}`);
               balance = existingBalance + amount;
-              console.log(`SubTokenCreated--updatedBalance: ${balance}`);
+              console.log(`\tupdated balance: ${balance}`);
+              console.log(`\tnew record?: NO`);
+              console.log(`\tipsAccountLookup: ${ipsAccountLookup}\n`); 
 
               // Update tokenBalance
               ipsAccountLookup.tokenBalance = bigintTransformer.from(balance.toString());
+
+               // If ipsAccount obj found in database, insert updated obj into events array
+              if (lookupSource === "DATABASE") {
+                events.ipsAccounts.push([ipsAccountLookup, toAccount]);
+                events.accountIds.add(toAccount);
+              }
             }
             // No record was found so create new
             else {
+              console.log(`\tnew record?: YES\n`);
+
               let ips = await getIpsObj(ctx, events.ips, ipsId);
 
               // Create IpsAccount object
@@ -189,18 +217,24 @@ async function getEvents(ctx: Ctx): Promise<EventInfo> {
                 ips: ips,
                 tokenBalance: bigintTransformer.from(amount.toString())
               });
-            }
 
-            console.log(`ipsAccountLookup: ${ipsAccountLookup}`);            
+              events.ipsAccounts.push([ipsAccountLookup, toAccount]);
+              events.accountIds.add(toAccount);
+            }      
 
-            events.ipsAccounts.push([ipsAccountLookup, toAccount]);
-            events.accountIds.add(toAccount);
+            console.log(events.ipsAccounts);
           }
         }
       }
 
       else if (item.name === "INV4.Minted") {
-        handleMinted(ctx, item, events);
+        await handleMinted(ctx, item, events);
+
+        console.log(events.ipsAccounts);
+      }
+
+      else if (item.name === "INV4.Burned") {
+        await handleBurned(ctx, item, events);
       }
     }
   }

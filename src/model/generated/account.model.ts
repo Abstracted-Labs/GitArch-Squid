@@ -13,8 +13,8 @@ export class Account {
   @PrimaryColumn_()
   id!: string
 
-  @Column_("text", {nullable: true})
-  accountId!: string | undefined | null
+  @Column_("text", {nullable: false})
+  accountId!: string
 
   /**
    * IP sets this account has some level of access to via ownership or sub tokens

@@ -1,4 +1,5 @@
 import {Entity as Entity_, Column as Column_, PrimaryColumn as PrimaryColumn_, ManyToOne as ManyToOne_, Index as Index_} from "typeorm"
+import * as marshal from "./marshal"
 import {Account} from "./account.model"
 import {Ips} from "./ips.model"
 
@@ -17,5 +18,8 @@ export class IpsAccount {
 
   @Index_()
   @ManyToOne_(() => Ips, {nullable: true})
-  ips!: Ips
+  ips!: Ips | undefined | null
+
+  @Column_("numeric", {transformer: marshal.bigintTransformer, nullable: true})
+  tokenBalance!: bigint | undefined | null
 }

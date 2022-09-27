@@ -7,7 +7,6 @@ import {
   toHex,
 } from "@subsquid/substrate-processor";
 import { Store, TypeormDatabase } from "@subsquid/typeorm-store";
-import { from } from "form-data";
 import { In } from "typeorm";
 import {
   Account,
